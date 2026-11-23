@@ -50,3 +50,4 @@ svg.i{width:23px;height:23px;fill:none;stroke:currentColor;stroke-width:1.7;stro
 .sk{height:120px;border-radius:14px;margin-bottom:12px;background:linear-gradient(90deg,#e6eaf1,#f3f5f9,#e6eaf1);background-size:200% 100%;animation:sk 1.2s infinite}@keyframes sk{to{background-position:-200% 0}}
 .cfg{padding:40px 20px;text-align:center}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+.lk{background:none;border:0;color:var(--az);font-size:13px;text-decoration:underline;padding:6px 4px;margin-left:8px;min-height:36px;cursor:pointer}.lk.rd{color:var(--rd)}

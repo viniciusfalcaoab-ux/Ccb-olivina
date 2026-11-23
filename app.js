@@ -10,6 +10,10 @@ const S={y:hoje.getFullYear(),m:hoje.getMonth()+1,tab:'agenda',v:[],ad:{},ov:nul
 const closed=()=>S.ov!==null?S.ov:S.y*12+S.m<HM;
 const P={agenda:'M8 6h12M8 12h12M8 18h12M3.5 6h.01M3.5 12h.01M3.5 18h.01',calendario:'M4 6h16v14H4zM4 10h16M8 3v4M16 3v4',historico:'M12 7v5l3 2M3 12a9 9 0 1 0 3-6.7M3 4v4h4',admin:'M6 11h12v9H6zM8 11V8a4 4 0 0 1 8 0v3'};
 const ic=n=>`<svg class="i" viewBox="0 0 24 24"><path d="${P[n]}"/></svg>`;
+const KEYS=()=>{try{return JSON.parse(localStorage.getItem('ccb_chaves')||'{}')}catch(e){return{}}};
+const saveKey=(vid,n,k)=>{try{const a=KEYS();(a[vid]=a[vid]||[]).push({n,k});localStorage.setItem('ccb_chaves',JSON.stringify(a))}catch(e){}};
+const dropKey=(vid,k)=>{try{const a=KEYS();a[vid]=(a[vid]||[]).filter(x=>x.k!==k);localStorage.setItem('ccb_chaves',JSON.stringify(a))}catch(e){}};
+const mine=(vid,nome)=>(KEYS()[vid]||[]).find(x=>x.n===nome);
 const msgErr=e=>/Mês encerrado/.test(e.message||'')?'Este mês está encerrado. Reabra o mês para alterar.':'Não foi possível concluir. Tente de novo.';
 
 function toast(t,e){const x=$('#tt');x.textContent=t;x.className='on'+(e?' er':'');clearTimeout(toast.t);toast.t=setTimeout(()=>x.className='',3200)}
@@ -18,7 +22,10 @@ function close(){$('#md').classList.remove('on');if(ask.r){const r=ask.r;ask.r=n
 const ask=(t,b)=>new Promise(r=>{modal(`<h3>${t}</h3><div class="adm" style="margin-top:14px"><button class="btn" data-a="yes">${b}</button><button class="bt" data-a="no">Voltar</button></div>`);ask.r=r});
 
 function card(v){const p=v.participacoes||[],ok=!closed()&&v.status==='agendada';
- const lista=p.length?`<ol>${p.map(x=>`<li>${esc(x.nome)}</li>`).join('')}</ol>`:'<p class="vz">Ninguém confirmou participação ainda.</p>';
+ const li=x=>{const m=mine(v.id,x.nome),pode=!closed()&&v.status==='agendada';
+  const b=m&&pode?`<button class="lk" data-a="meu" data-v="${v.id}" data-k="${m.k}" data-n="${esc(x.nome)}">Cancelar minha presença</button>`:S.adm&&!closed()?`<button class="lk rd" data-a="rem" data-p="${x.id}" data-n="${esc(x.nome)}">Remover</button>`:'';
+  return `<li>${esc(x.nome)}${b}</li>`};
+ const lista=p.length?`<ol>${p.map(li).join('')}</ol>`:'<p class="vz">Ninguém confirmou participação ainda.</p>';
  return `<article class="vc ${v.status}"><div class="dt"><b>${v.data.slice(8)}</b><small>${MES[+v.data.slice(5,7)-1].slice(0,3)}</small></div>
  <div class="vi"><h3>${esc(v.nome)}</h3><p>${v.hora?v.hora.slice(0,5)+' h':'Horário a definir'}</p>${v.responsavel?`<p class="mu">Responsável: ${esc(v.responsavel)}</p>`:''}<p><span class="chip ${v.status}">${ST[v.status]}</span><b>${p.length}</b> confirmado${p.length===1?'':'s'}${v.previstos?` de ${v.previstos} previstos`:''}</p></div>
  ${S.ad[v.id]?`<p class="end">${esc(S.ad[v.id])}</p>`:''}${v.observacoes?`<p class="end">${esc(v.observacoes)}</p>`:''}
@@ -88,6 +95,15 @@ document.addEventListener('click',async e=>{
  else if(a==='no')close();
  else if(a==='yes'){const r=ask.r;ask.r=null;close();r&&r(true)}
  else if(a==='conf'){modal(`<h3>CONFIRMAR VISITA</h3><p class="mu">Digite seu nome para registrar sua participação.</p><form data-f="conf" data-id="${D.id}"><input name="n" placeholder="Digite seu nome completo" autocomplete="name" maxlength="80" required><button class="btn">CONFIRMAR</button></form><button class="bt" data-a="no">Cancelar</button>`);setTimeout(()=>{const i=$('#md input');i&&i.focus()},60)}
+ else if(a==='meu'){if(await ask(`Cancelar a presença de ${esc(D.n)} nesta visita?`,'Cancelar presença')){
+  const r=await sb.rpc('cancelar_participacao',{p_visita:D.v,p_chave:D.k});
+  if(r.error)return toast('Não foi possível cancelar. Tente de novo.',1);
+  if(r.data==='ok'||r.data==='nao_encontrada')dropKey(D.v,D.k);
+  toast(r.data==='ok'?'Presença cancelada.':r.data==='encerrada'?'Esta visita não aceita mais alterações.':'Essa confirmação já não existe.',r.data!=='ok');await load(1)}}
+ else if(a==='rem'){if(await ask(`Remover ${esc(D.n)} da lista de confirmados?`,'Remover')){
+  const r=await sb.rpc('remover_participacao',{p_id:D.p});
+  if(r.error||r.data!=='ok')return toast(r.data==='encerrada'?'Este mês está encerrado. Reabra o mês para alterar.':'Não foi possível remover.',1);
+  toast('Nome removido.');await load(1)}}
  else if(a==='nova')formV();
  else if(a==='edit'&&v)formV(v);
  else if(a==='real'&&v)up(v.id,{status:'realizada'},'Visita marcada como realizada.');
@@ -100,9 +116,11 @@ document.addEventListener('click',async e=>{
 document.addEventListener('submit',async e=>{e.preventDefault();const f=e.target,k=f.dataset.f,btn=f.querySelector('.btn'),g=n=>f.elements[n].value;btn.disabled=true;
  try{
   if(k==='conf'){
-   const r=await sb.rpc('confirmar_participacao',{p_visita:f.dataset.id,p_nome:g('n')});
+   const nome=g('n').trim().replace(/\s+/g,' '),chave=(window.crypto&&crypto.randomUUID&&crypto.randomUUID())||null;
+   const r=await sb.rpc('confirmar_participacao',{p_visita:f.dataset.id,p_nome:nome,p_chave:chave});
    const M={duplicado:'Esse nome já está confirmado nesta visita.',encerrada:'Esta visita não aceita mais confirmações.',nome_invalido:'Digite seu nome completo.',nao_encontrada:'Visita não encontrada.'};
    if(r.error||r.data!=='ok'){toast(r.error?'Não foi possível confirmar. Tente de novo.':(M[r.data]||'Erro.'),1);return}
+   if(chave)saveKey(f.dataset.id,nome,chave);
    modal('<div class="okm"><svg viewBox="0 0 52 52"><circle cx="26" cy="26" r="24"/><path d="M15 27l8 8 15-17"/></svg><h3>Participação confirmada com sucesso!</h3></div>');setTimeout(close,1600);await load(1)}
   else if(k==='login'){
    const r=await sb.auth.signInWithPassword({email:g('e').trim(),password:g('s')});
